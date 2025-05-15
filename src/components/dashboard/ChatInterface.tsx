@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, UserCircle2, Bot, Loader2, Bell } from 'lucide-react';
+import { Send, UserCircle2, Bot, Loader2, Bell, Shield } from 'lucide-react';
 import useChat from '../../store/chatStore';
+import useAuthStore from '../../store/authStore';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 
 const ChatMessage: React.FC<{
-  message: { sender: string; content: string };
+  message: { sender: string; content: string; role?: string };
   isLast: boolean;
 }> = ({ message, isLast }) => {
   const isUser = message.sender === 'user';
   const isAgent = message.sender === 'agent';
+  const isAdmin = message.role === 'admin';
   
   return (
     <div 
@@ -21,10 +23,16 @@ const ChatMessage: React.FC<{
           max-w-[80%] p-3 font-mono text-sm flex items-start gap-2
           ${isUser 
             ? 'bg-white text-black border border-black flex-row-reverse' 
-            : 'bg-black text-white border border-black'}
+            : isAdmin
+              ? 'bg-red-600 text-white border border-red-600'
+              : isAgent
+                ? 'bg-blue-600 text-white border border-blue-600'
+                : 'bg-black text-white border border-black'}
         `}
       >
-        {isAgent ? (
+        {isAdmin ? (
+          <Shield size={16} className="mt-1" />
+        ) : isAgent ? (
           <UserCircle2 size={16} className="mt-1" />
         ) : !isUser ? (
           <Bot size={16} className="mt-1" />
@@ -37,16 +45,20 @@ const ChatMessage: React.FC<{
 
 const ChatInterface: React.FC = () => {
   const [input, setInput] = useState('');
+  const { user } = useAuthStore();
   const { 
     messages, 
     isTyping, 
     chatStatus,
     preferredAgent,
     notificationsEnabled,
+    currentChatUserId,
+    availableUsers,
     sendMessage,
     requestHumanAgent,
     setPreferredAgent,
-    enableNotifications
+    enableNotifications,
+    switchChatUser
   } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -62,14 +74,12 @@ const ChatInterface: React.FC = () => {
     if (!notificationsEnabled) {
       const enabled = await enableNotifications();
       if (!enabled) {
-        // Proceed anyway, but notifications won't work
         console.log('Notifications not enabled');
       }
     }
     await requestHumanAgent();
   };
   
-  // Scroll to bottom whenever messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -83,7 +93,22 @@ const ChatInterface: React.FC = () => {
             <p className="text-xs">Discuss your project and break it down into tasks</p>
           </div>
           
-          {chatStatus === 'idle' && (
+          {user?.role === 'admin' && availableUsers.length > 0 && (
+            <select
+              className="border border-black p-2 text-sm"
+              value={currentChatUserId || ''}
+              onChange={(e) => switchChatUser(e.target.value)}
+            >
+              <option value="">Select User</option>
+              {availableUsers.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.username} ({u.email})
+                </option>
+              ))}
+            </select>
+          )}
+          
+          {chatStatus === 'idle' && user?.role !== 'admin' && (
             <Button
               onClick={handleAgentRequest}
               size="sm"

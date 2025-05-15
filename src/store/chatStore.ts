@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { ChatMessage, ChatStatus, ChatSender } from '../types';
+import { ChatMessage, ChatStatus, ChatSender, User } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface ChatState {
   messages: ChatMessage[];
@@ -8,16 +9,18 @@ interface ChatState {
   chatStatus: ChatStatus;
   preferredAgent: ChatSender;
   notificationsEnabled: boolean;
+  currentChatUserId: string | null;
+  availableUsers: User[];
   sendMessage: (content: string) => Promise<void>;
   clearChat: () => void;
   setPreferredAgent: (agent: ChatSender) => void;
   requestHumanAgent: () => Promise<void>;
   enableNotifications: () => Promise<boolean>;
+  switchChatUser: (userId: string) => Promise<void>;
+  loadAvailableUsers: () => Promise<void>;
 }
 
-// Generate AI response based on keywords
 const generateAIResponse = async (message: string): Promise<string> => {
-  // Simulate network delay
   await new Promise(resolve => setTimeout(resolve, 1500));
   
   const messageLower = message.toLowerCase();
@@ -37,15 +40,12 @@ const generateAIResponse = async (message: string): Promise<string> => {
   }
 };
 
-// Simulate human agent responses
 const simulateHumanAgent = async (message: string): Promise<string> => {
-  // Simulate network delay (longer to be realistic)
   await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 2000));
   
   return `Thank you for your message. I'm reviewing your request about "${message.slice(0, 30)}..." and will help you break this down into manageable tasks. Could you tell me more about your timeline and budget for this project?`;
 };
 
-// Send browser notification
 const sendNotification = (title: string, body: string) => {
   if (!("Notification" in window)) return;
   
@@ -67,6 +67,33 @@ const useChat = create<ChatState>((set, get) => ({
   chatStatus: 'idle',
   preferredAgent: 'ai',
   notificationsEnabled: false,
+  currentChatUserId: null,
+  availableUsers: [],
+  
+  loadAvailableUsers: async () => {
+    const { data: users, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'user');
+    
+    if (!error && users) {
+      set({ availableUsers: users });
+    }
+  },
+  
+  switchChatUser: async (userId: string) => {
+    set({ currentChatUserId: userId });
+    // Load chat history for this user
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+    
+    if (!error && messages) {
+      set({ messages });
+    }
+  },
   
   enableNotifications: async () => {
     if (!("Notification" in window)) return false;
@@ -88,7 +115,6 @@ const useChat = create<ChatState>((set, get) => ({
   requestHumanAgent: async () => {
     set({ chatStatus: 'waiting' });
     
-    // Simulate agent connection delay
     await new Promise(resolve => setTimeout(resolve, 3000));
     
     const agentMessage: ChatMessage = {
@@ -104,16 +130,14 @@ const useChat = create<ChatState>((set, get) => ({
       preferredAgent: 'agent',
     }));
     
-    // Send notification when agent connects
     if (get().notificationsEnabled) {
       sendNotification('Agent Connected', 'Sarah is ready to help you with your project.');
     }
   },
   
   sendMessage: async (content: string) => {
-    const { preferredAgent, chatStatus, notificationsEnabled } = get();
+    const { preferredAgent, chatStatus, notificationsEnabled, currentChatUserId } = get();
     
-    // Add user message
     const userMessage: ChatMessage = {
       id: uuidv4(),
       sender: 'user',
@@ -126,7 +150,6 @@ const useChat = create<ChatState>((set, get) => ({
       isTyping: true,
     }));
     
-    // Generate response based on preferred agent
     try {
       let response: string;
       
@@ -148,7 +171,6 @@ const useChat = create<ChatState>((set, get) => ({
         isTyping: false,
       }));
       
-      // Send notification for agent responses when tab is not focused
       if (notificationsEnabled && preferredAgent === 'agent' && document.hidden) {
         sendNotification('New Message from Sarah', response.slice(0, 100));
       }
