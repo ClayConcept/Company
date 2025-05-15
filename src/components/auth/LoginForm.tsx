@@ -8,6 +8,7 @@ import Card from '../ui/Card';
 const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [errors, setErrors] = useState<{email?: string; password?: string}>({});
   
   const { login, isLoading } = useAuthStore();
@@ -33,6 +34,7 @@ const LoginForm: React.FC = () => {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError('');
     
     if (!validate()) return;
     
@@ -40,12 +42,18 @@ const LoginForm: React.FC = () => {
       await login(email, password);
     } catch (error) {
       console.error('Login error:', error);
+      setLoginError(error instanceof Error ? error.message : 'Failed to login. Please try again.');
     }
   };
   
   return (
     <Card className="w-full max-w-md p-8 mx-auto">
       <h2 className="text-2xl font-bold mb-6 uppercase">Login</h2>
+      {loginError && (
+        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+          {loginError}
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <Input
           label="Email"

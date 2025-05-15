@@ -27,25 +27,58 @@ const useAuthStore = create<AuthState>((set) => ({
       
       if (authError) throw authError;
       
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authData.user.id)
         .single();
       
-      if (!profile) throw new Error('Profile not found');
+      if (profileError) {
+        throw new Error('Failed to fetch profile: ' + profileError.message);
+      }
       
-      set({ 
-        user: {
-          id: authData.user.id,
-          email: authData.user.email!,
-          username: profile.username,
-          subscription: profile.subscription as SubscriptionTier,
-          role: profile.role as UserRole,
-        },
-        isAuthenticated: true,
-        isLoading: false,
-      });
+      if (!profile) {
+        // Create profile if it doesn't exist
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: authData.user.id,
+              email: authData.user.email,
+              username: email.split('@')[0], // Temporary username
+              role: 'user',
+              subscription: 'free'
+            }
+          ])
+          .select()
+          .single();
+          
+        if (createError) throw new Error('Failed to create profile: ' + createError.message);
+        
+        set({ 
+          user: {
+            id: authData.user.id,
+            email: authData.user.email!,
+            username: newProfile.username,
+            subscription: newProfile.subscription as SubscriptionTier,
+            role: newProfile.role as UserRole,
+          },
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } else {
+        set({ 
+          user: {
+            id: authData.user.id,
+            email: authData.user.email!,
+            username: profile.username,
+            subscription: profile.subscription as SubscriptionTier,
+            role: profile.role as UserRole,
+          },
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      }
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -68,6 +101,21 @@ const useAuthStore = create<AuthState>((set) => ({
       
       if (authError) throw authError;
       if (!authData.user) throw new Error('User not created');
+      
+      // Create initial profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: authData.user.id,
+            email: authData.user.email,
+            username,
+            role: 'user',
+            subscription: 'free'
+          }
+        ]);
+        
+      if (profileError) throw new Error('Failed to create profile: ' + profileError.message);
       
       set({ 
         user: {
@@ -129,7 +177,11 @@ supabase.auth.getSession().then(({ data: { session } }) => {
       .select('*')
       .eq('id', session.user.id)
       .single()
-      .then(({ data: profile }) => {
+      .then(({ data: profile, error }) => {
+        if (error) {
+          console.error('Failed to fetch profile:', error);
+          return;
+        }
         if (profile) {
           useAuthStore.setState({
             user: {
